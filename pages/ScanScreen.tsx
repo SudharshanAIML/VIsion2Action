@@ -5,6 +5,7 @@ import { BigButton } from '../components/BigButton';
 import { CameraHandle, AppRoute } from '../types';
 import { analyzeImage, askAboutImage } from '../services/geminiService';
 import { speak, vibrate, playEarcon } from '../services/accessibilityService';
+import { getLanguage, t } from '../services/languageService';
 import { ArrowLeft, Loader2, Mic } from 'lucide-react';
 
 export const ScanScreen: React.FC = () => {
@@ -27,7 +28,7 @@ export const ScanScreen: React.FC = () => {
     
     // Feedback
     vibrate(50);
-    speak("Scanning...");
+    speak(t('scanning'));
     setIsProcessing(true);
     setLastResult("");
 
@@ -45,11 +46,11 @@ export const ScanScreen: React.FC = () => {
       
       setLastResult(description);
       speak(description);
-      vibrate([50, 50]); // Double tap for success
+      vibrate([50, 50]); 
 
     } catch (error) {
       console.error(error);
-      speak("Error capturing image.");
+      speak("Error.");
       setLastResult("Error: Could not scan.");
       vibrate(500); 
     } finally {
@@ -59,25 +60,25 @@ export const ScanScreen: React.FC = () => {
 
   const handleAskQuestion = () => {
     if (!lastImage) {
-      speak("Please scan a scene first.");
+      speak("Scan first.");
       return;
     }
 
     const SpeechRecognition = (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
     if (!SpeechRecognition) {
-      speak("Voice features are not supported on this device.");
+      speak("No voice support.");
       return;
     }
 
     const recognition = new SpeechRecognition();
-    recognition.lang = 'en-US';
+    recognition.lang = getLanguage().code;
     recognition.interimResults = false;
     recognition.maxAlternatives = 1;
 
     recognition.onstart = () => {
       setIsListening(true);
-      playEarcon('listen'); // Audio cue
-      setLastResult("Listening...");
+      playEarcon('listen'); 
+      setLastResult(t('listening'));
     };
 
     recognition.onend = () => {
@@ -87,12 +88,11 @@ export const ScanScreen: React.FC = () => {
     recognition.onresult = async (event: any) => {
       const question = event.results[0][0].transcript;
       if (question) {
-        // Stop listening state immediately so UI updates
         setIsListening(false);
         setIsProcessing(true);
         
         playEarcon('processing');
-        speak(`Asking: ${question}`);
+        speak(question); // Echo back
         setLastResult(`"${question}"`);
         
         try {
@@ -100,7 +100,7 @@ export const ScanScreen: React.FC = () => {
           setLastResult(answer);
           speak(answer);
         } catch (e) {
-          speak("Sorry, I couldn't get an answer.");
+          speak("Error.");
         } finally {
           setIsProcessing(false);
         }
@@ -109,12 +109,11 @@ export const ScanScreen: React.FC = () => {
 
     recognition.onerror = (e: any) => {
       setIsListening(false);
-      playEarcon('stop'); // Error cue
-      // If no speech was detected, just return to state
+      playEarcon('stop');
       if (e.error === 'no-speech') {
-        speak("I didn't hear anything.");
+        speak("");
       } else {
-        speak("Microphone error.");
+        speak(t('mic_error'));
       }
     };
 
@@ -147,12 +146,12 @@ export const ScanScreen: React.FC = () => {
               {isListening ? (
                 <>
                   <Mic className="w-20 h-20 text-red-500 animate-pulse mb-6" />
-                  <p className="text-white text-3xl font-bold">Listening...</p>
+                  <p className="text-white text-3xl font-bold">{t('listening')}</p>
                 </>
               ) : (
                 <>
                   <Loader2 className="w-20 h-20 text-yellow-400 animate-spin mb-6" />
-                  <p className="text-yellow-400 text-2xl font-bold">Thinking...</p>
+                  <p className="text-yellow-400 text-2xl font-bold">{t('processing')}</p>
                 </>
               )}
             </div>
@@ -166,7 +165,7 @@ export const ScanScreen: React.FC = () => {
         aria-live="polite"
       >
         <p className="text-xl text-white font-medium text-center leading-relaxed">
-          {lastResult || "Ready to scan."}
+          {lastResult || t('tap_start')}
         </p>
       </div>
 
@@ -176,8 +175,8 @@ export const ScanScreen: React.FC = () => {
            <div className="flex gap-4 h-full">
              <div className="flex-1">
                <BigButton 
-                 title="ASK QUESTION" 
-                 subtitle="Use Mic"
+                 title="ASK" 
+                 subtitle={t('hold_ask')}
                  onPress={handleAskQuestion} 
                  color="secondary"
                  fullHeight
@@ -185,8 +184,8 @@ export const ScanScreen: React.FC = () => {
              </div>
              <div className="flex-1">
                 <BigButton 
-                  title="NEW SCAN" 
-                  subtitle="Capture"
+                  title="SCAN" 
+                  subtitle="New"
                   onPress={handleScan} 
                   fullHeight
                 />
@@ -194,8 +193,8 @@ export const ScanScreen: React.FC = () => {
            </div>
         ) : (
           <BigButton 
-            title={isProcessing ? "PROCESSING..." : "SCAN SCENE"} 
-            subtitle="Capture Image"
+            title={isProcessing ? t('processing') : "SCAN"} 
+            subtitle={t('tap_start')}
             onPress={handleScan} 
             disabled={isProcessing}
             fullHeight

@@ -2,8 +2,8 @@
   "requestFramePermissions": [
     "camera",
     "microphone",
-    "geolocation",
-    "accelerometer",
-    "gyroscope"
-  ]
+    "geolocation"
+  ],
+  "name": "Vision2Action Web",
+  "description": ""
 }

@@ -1,10 +1,12 @@
 import { GoogleGenAI } from "@google/genai";
 import { MemoryTag, SensorData } from "../types";
+import { getLanguage } from "./languageService";
 
 // Initialize Gemini Client
 const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
 
 const getNavInstruction = (tags: MemoryTag[], sensors?: SensorData) => {
+  const currentLang = getLanguage();
   const tagList = tags.map(t => `"${t.name}"`).join(', ');
   
   let sensorContext = "User Status: Stationary.";
@@ -24,32 +26,34 @@ You are "Vision2Action", an advanced safety guardian and navigation guide for a 
 ${sensorContext}
 ${memoryContext}
 
+IMPORTANT: You must respond in the language: ${currentLang.name} (${currentLang.nativeName}).
+
 Analyze the image and provide output in this strict priority order:
 
 1. 🛑 SAFETY GUARDIAN (URGENT):
    - Immediately detect: Approaching Vehicles, Staircases (up/down), Edges/Drops, Wet Floors, Low hanging obstacles.
-   - If a hazard is immediate, START response with "WARNING: [Hazard Name] [Instruction]". 
-   - Example: "WARNING: Car approaching on right. Stop." or "WARNING: Downward stairs ahead."
+   - If a hazard is immediate, START response with "WARNING: [Hazard Name] [Instruction]" (Translated to ${currentLang.name}).
+   - Example (in English): "WARNING: Car approaching on right. Stop."
 
 2. 📍 MICRO NAVIGATION (Precision):
    - Give executable instructions based on the path.
    - Use approximate metric distances or steps if clear.
-   - Example: "Walk forward 2 meters", "Turn 30 degrees left to avoid the pole", "Path clear for 5 steps".
+   - Example (in English): "Walk forward 2 meters", "Turn 30 degrees left".
 
 3. 🛠️ AFFORDANCE & UTILITY (Object Purpose):
    - Do not just name objects; explain their utility/state.
-   - Example: instead of "There is a chair", say "Empty chair 1 meter ahead, you can sit."
-   - Example: instead of "A door", say "Closed door, handle is on the left."
+   - Example (in English): "Empty chair 1 meter ahead, you can sit."
 
 4. STYLE:
    - Concise, direct, imperative. No fluff.
-   - Max 2-3 sentences unless explaining a complex scene.
+   - Max 2-3 sentences.
 `;
 };
 
 const QA_SYSTEM_INSTRUCTION = `
 You are a helpful visual assistant for a blind user. 
 The user is asking a question about the current scene.
+IMPORTANT: Answer in the language configured by the user.
 Answer conversationally and directly.
 If the answer is not visible, say so.
 Keep answers under 2 sentences.
@@ -57,6 +61,7 @@ Keep answers under 2 sentences.
 
 export const analyzeImage = async (base64Image: string, tags: MemoryTag[] = [], sensors?: SensorData): Promise<string> => {
   try {
+    const currentLang = getLanguage();
     if (!base64Image || base64Image.length < 100) {
         console.warn("Invalid base64 image received");
         return "";
@@ -73,13 +78,13 @@ export const analyzeImage = async (base64Image: string, tags: MemoryTag[] = [], 
           role: 'user',
           parts: [
             { inlineData: { mimeType: 'image/jpeg', data: cleanBase64 } },
-            { text: "Guide me." }
+            { text: `Guide me in ${currentLang.name}.` }
           ]
         }
       ],
       config: {
         systemInstruction: getNavInstruction(tags, sensors),
-        maxOutputTokens: 150, // Shorter for faster realtime response
+        maxOutputTokens: 150, 
         temperature: 0.4,
       }
     });
@@ -93,6 +98,7 @@ export const analyzeImage = async (base64Image: string, tags: MemoryTag[] = [], 
 
 export const askAboutImage = async (base64Image: string, question: string): Promise<string> => {
   try {
+    const currentLang = getLanguage();
      if (!base64Image || base64Image.length < 100) {
         return "I can't see the image clearly.";
     }
@@ -113,7 +119,7 @@ export const askAboutImage = async (base64Image: string, question: string): Prom
         }
       ],
       config: {
-        systemInstruction: QA_SYSTEM_INSTRUCTION,
+        systemInstruction: QA_SYSTEM_INSTRUCTION + `\nTarget Language: ${currentLang.name}`,
         maxOutputTokens: 300,
         temperature: 0.6,
       }

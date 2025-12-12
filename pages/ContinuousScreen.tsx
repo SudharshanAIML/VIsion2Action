@@ -6,6 +6,7 @@ import { analyzeImage, askAboutImage } from '../services/geminiService';
 import { speak, vibrate, playEarcon } from '../services/accessibilityService';
 import { getTags, addTag, removeTag } from '../services/memoryService';
 import { initSensors, stopSensors, getSensorData } from '../services/sensorService';
+import { getLanguage, t } from '../services/languageService';
 import { Mic, StopCircle, Navigation, Loader2, Tag as TagIcon, Trash2, ShieldAlert } from 'lucide-react';
 
 export const ContinuousScreen: React.FC = () => {
@@ -18,7 +19,7 @@ export const ContinuousScreen: React.FC = () => {
   const [isListening, setIsListening] = useState(false);
   const [lastImage, setLastImage] = useState<string | null>(null);
   const [tags, setTags] = useState<MemoryTag[]>([]);
-  const [isWarning, setIsWarning] = useState(false); // New state for hazards
+  const [isWarning, setIsWarning] = useState(false); 
 
   // Refs for loop management
   const isLoopRunning = useRef(true);
@@ -43,7 +44,7 @@ export const ContinuousScreen: React.FC = () => {
     window.speechSynthesis.cancel();
     
     const recognition = new SpeechRecognition();
-    recognition.lang = 'en-US';
+    recognition.lang = getLanguage().code; // Dynamic Language
     recognition.continuous = false; 
     recognition.interimResults = false;
     
@@ -52,7 +53,7 @@ export const ContinuousScreen: React.FC = () => {
     recognition.onstart = () => {
       setIsListening(true);
       playEarcon('listen');
-      setStatus("Listening...");
+      setStatus(t('listening'));
       vibrate(100);
     };
 
@@ -82,7 +83,7 @@ export const ContinuousScreen: React.FC = () => {
       scheduleNextFrame(1000);
       
       if (e.error !== 'no-speech' && e.error !== 'aborted') {
-         speak("Mic error.");
+         speak(t('mic_error'));
       }
     };
 
@@ -112,9 +113,17 @@ export const ContinuousScreen: React.FC = () => {
     
     playEarcon('processing'); 
     
-    // Check for "Remember/Mark" intent
+    // Check for "Remember/Mark" intent in supported languages is complex without NLU.
+    // For now, we only support basic keyword matching in English, 
+    // or rely on Gemini to interpret the command if we passed the text to it directly.
+    // To make it multilingual-friendly, we might need to rely on the intent from Gemini.
+    // However, for this implementation, we will treat all input as a Question 
+    // unless it matches English keywords for safety.
+    
     const lower = transcript.toLowerCase();
-    if (lower.startsWith("remember") || lower.startsWith("mark this") || lower.includes("mark as")) {
+    // Basic multi-lingual support for "mark/remember" is hard with hardcoded strings.
+    // We will stick to Question handling for now, or English commands.
+    if (lower.startsWith("remember") || lower.startsWith("mark this")) {
        handleMemoryCommand(transcript);
     } else {
        handleUserQuestion(transcript);
@@ -122,7 +131,7 @@ export const ContinuousScreen: React.FC = () => {
   };
 
   const handleMemoryCommand = async (transcript: string) => {
-    setStatus(`Tagging: "${transcript}"`);
+    setStatus(`Tag: "${transcript}"`);
     await new Promise(r => setTimeout(r, 500));
 
     const result = addTag(transcript);
@@ -135,7 +144,7 @@ export const ContinuousScreen: React.FC = () => {
     } else {
       speak(result.message);
       setStatus(result.message);
-      vibrate(500); // Long vibrate for error
+      vibrate(500); 
     }
 
     setTimeout(() => {
@@ -155,10 +164,10 @@ export const ContinuousScreen: React.FC = () => {
         setStatus(answer);
         speak(answer);
       } else {
-        speak("I can't see anything right now.");
+        speak(t('processing')); // Fallback
       }
     } catch (e) {
-      speak("Sorry, I couldn't answer.");
+      speak("Error.");
     } finally {
       setTimeout(() => {
         processingRef.current = false;
@@ -183,17 +192,14 @@ export const ContinuousScreen: React.FC = () => {
       if (imageBase64) {
         setLastImage(imageBase64); 
         
-        // Pass the active tags and SENSOR data to the AI analysis
         const sensors = getSensorData();
         const description = await analyzeImage(imageBase64, tags, sensors);
         
         if (description && isLoopRunning.current && !isListening && processingRef.current) {
           
-          // Safety Guardian Logic
           if (description.startsWith("WARNING")) {
             setIsWarning(true);
-            setStatus(description);
-            // Urgent haptics: 3 strong pulses
+            setStatus(t('hazard'));
             vibrate([500, 100, 500, 100, 500]); 
             speak(description);
           } else {
@@ -207,7 +213,6 @@ export const ContinuousScreen: React.FC = () => {
       console.warn("Nav frame skipped", e);
     } finally {
       processingRef.current = false;
-      // If warning, scan faster (2s), else normal pace (4s)
       const nextDelay = isWarning ? 2000 : 4000;
       scheduleNextFrame(nextDelay); 
     }
@@ -230,7 +235,6 @@ export const ContinuousScreen: React.FC = () => {
   // --- Interaction Handlers ---
 
   const handlePointerDown = (e: React.MouseEvent | React.TouchEvent) => {
-    // Permission trigger for iOS sensors on first tap
     initSensors(); 
 
     if (isActive) window.speechSynthesis.cancel();
@@ -260,11 +264,10 @@ export const ContinuousScreen: React.FC = () => {
   const toggleSession = () => {
     if (isActive) {
       setIsActive(false);
-      speak("Paused.");
+      speak(t('paused'));
       vibrate([50, 50]);
     } else {
       setIsActive(true);
-      // initSensors is also called here implicitly if tapped
       vibrate(50);
     }
   };
@@ -272,18 +275,18 @@ export const ContinuousScreen: React.FC = () => {
   // --- Effects ---
 
   useEffect(() => {
-    setTags(getTags()); // Load tags on mount
-    initSensors(); // Try initializing sensors
+    setTags(getTags()); 
+    initSensors(); 
 
     if (isActive) {
       isLoopRunning.current = true;
-      speak("Navigation Active.");
+      speak(t('nav_active'));
       timerRef.current = setTimeout(processNavigationFrame, 1000);
     } else {
       isLoopRunning.current = false;
       if (timerRef.current) clearTimeout(timerRef.current);
       if (window.speechSynthesis) window.speechSynthesis.cancel();
-      setStatus("Paused. Tap to Resume.");
+      setStatus(t('paused') + ". " + t('tap_start'));
     }
     
     return () => {
@@ -336,7 +339,7 @@ export const ContinuousScreen: React.FC = () => {
         onContextMenu={(e) => e.preventDefault()}
         className="absolute inset-0 z-10 w-full h-full flex flex-col items-center justify-center p-6 bg-transparent active:bg-white/5 transition-colors cursor-pointer touch-none"
         role="button"
-        aria-label={isListening ? "Listening" : (isActive ? "Stop Navigation" : "Start Navigation")}
+        aria-label={isListening ? t('listening') : (isActive ? t('tap_pause') : t('tap_start'))}
         tabIndex={0}
       >
         <div className={`
@@ -359,7 +362,7 @@ export const ContinuousScreen: React.FC = () => {
           )}
 
           <h2 className={`text-2xl font-black uppercase ${isActive || isListening ? 'text-white' : 'text-slate-400'}`}>
-            {isListening ? "Listening..." : (isWarning ? "HAZARD DETECTED" : (isActive ? "Monitoring" : "Paused"))}
+            {isListening ? t('listening') : (isWarning ? t('hazard') : (isActive ? t('monitoring') : t('paused')))}
           </h2>
 
           <p className={`text-xl font-bold leading-snug min-h-[3rem] ${isWarning ? 'text-red-300' : 'text-yellow-300'}`}>
@@ -373,7 +376,7 @@ export const ContinuousScreen: React.FC = () => {
 
         <div className="absolute bottom-10 opacity-80 bg-black/60 px-6 py-3 rounded-full border border-white/10 backdrop-blur">
           <p className="text-white font-bold tracking-wide">
-             Hold to "Mark this as..."
+             {t('hold_ask')}
           </p>
         </div>
       </div>
