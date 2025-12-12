@@ -58,14 +58,23 @@ export const HomeScreen: React.FC = () => {
           </svg>
         </div>
 
-        <div className="text-center space-y-4">
-          <h1 className="text-5xl font-black text-white tracking-tighter">
-            VISION<span className="text-blue-500 text-4xl">2</span>ACTION
-          </h1>
-          <p className="text-2xl text-slate-300 font-medium max-w-xs mx-auto">
-            {welcomeText}
-          </p>
-        </div>
+<div className="text-center space-y-4" style={{ perspective: "500px" }}>
+  <h1 className="text-5xl font-black text-white tracking-tighter">
+    VISION
+    <span
+      className="text-blue-500 text-4xl inline-block"
+      style={{ transform: "rotateX(45deg)" }}
+    >
+      2
+    </span>
+    ACTION
+  </h1>
+
+  <p className="text-2xl text-slate-300 font-medium max-w-xs mx-auto">
+    {welcomeText}
+  </p>
+</div>
+
       </button>
 
       {/* Language Toggle Button (High Accessibility) */}
