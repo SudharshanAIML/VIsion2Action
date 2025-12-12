@@ -11,7 +11,7 @@ Priorities:
 1. HAZARDS: Say "STOP" or "CAUTION" if there is immediate danger (stairs, traffic, hole).
 2. PATH: Describe where to walk (e.g., "Path clear straight ahead", "Turn slightly right").
 3. OBJECTS: Mention only obstacles in the way.
-4. BREVITY: Maximum 10 words. concise. clear.
+4. STYLE: Use complete, concise sentences. Avoid bullet points. Do not cut off sentences.
 `;
 
 const QA_SYSTEM_INSTRUCTION = `
@@ -47,7 +47,7 @@ export const analyzeImage = async (base64Image: string): Promise<string> => {
       ],
       config: {
         systemInstruction: NAV_SYSTEM_INSTRUCTION,
-        maxOutputTokens: 100,
+        maxOutputTokens: 300, // Increased to ensure full sentences
         temperature: 0.4,
       }
     });
@@ -82,7 +82,7 @@ export const askAboutImage = async (base64Image: string, question: string): Prom
       ],
       config: {
         systemInstruction: QA_SYSTEM_INSTRUCTION,
-        maxOutputTokens: 150,
+        maxOutputTokens: 300,
         temperature: 0.6,
       }
     });

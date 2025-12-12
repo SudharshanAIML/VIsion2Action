@@ -4,11 +4,18 @@ export const speak = (text: string, onEnd?: () => void) => {
     return;
   }
 
-  // Cancel current speech to avoid queue buildup
+  // If text is empty, do nothing
+  if (!text.trim()) {
+    if (onEnd) onEnd();
+    return;
+  }
+
+  // Cancel current speech to ensure new urgent information takes precedence
+  // However, we ensure we don't just constantly interrupt with the same message
   window.speechSynthesis.cancel();
 
   const utterance = new SpeechSynthesisUtterance(text);
-  utterance.rate = 1.1; // Slightly faster for efficiency
+  utterance.rate = 1.0; // Normal speed for clarity
   utterance.pitch = 1.0;
   
   // Prefer a clear Google voice if available
@@ -22,10 +29,8 @@ export const speak = (text: string, onEnd?: () => void) => {
   };
   
   // Handle error (e.g. if speech is canceled)
-  utterance.onerror = () => {
-    // If canceled, we might not want to trigger onEnd, but for this app's loop, 
-    // we generally want to reset state if speech fails.
-    // However, explicit cancel usually shouldn't trigger next step.
+  utterance.onerror = (e) => {
+    // console.warn("Speech error or interruption", e);
   };
 
   window.speechSynthesis.speak(utterance);
