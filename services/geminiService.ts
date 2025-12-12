@@ -1,24 +1,49 @@
 import { GoogleGenAI } from "@google/genai";
-import { MemoryTag } from "../types";
+import { MemoryTag, SensorData } from "../types";
 
 // Initialize Gemini Client
 const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
 
-const getNavInstruction = (tags: MemoryTag[]) => {
+const getNavInstruction = (tags: MemoryTag[], sensors?: SensorData) => {
   const tagList = tags.map(t => `"${t.name}"`).join(', ');
+  
+  let sensorContext = "User Status: Stationary.";
+  if (sensors) {
+    sensorContext = `User Status: ${sensors.isMoving ? "Walking" : "Standing Still"}.`;
+    if (sensors.heading !== null) {
+      sensorContext += ` Facing: ${sensors.heading} degrees.`;
+    }
+  }
+
   const memoryContext = tags.length > 0 
-    ? `\n5. MEMORY: The user has marked these specific locations: [${tagList}]. If you see one of them clearly, announce "You are near your ${tags[0].name}" or similar.` 
+    ? `\nMEMORY TAGS: User marked locations: [${tagList}]. If seen, announce: "You are near your ${tags[0].name}".` 
     : "";
 
   return `
-You are a pair of eyes for a blind user. 
-Analyze the image stream and provide immediate navigation cues.
+You are "Vision2Action", an advanced safety guardian and navigation guide for a blind user.
+${sensorContext}
+${memoryContext}
 
-Priorities:
-1. HAZARDS: Say "STOP" or "CAUTION" if there is immediate danger (stairs, traffic, hole).
-2. PATH: Describe where to walk (e.g., "Path clear straight ahead", "Turn slightly right").
-3. OBJECTS: Mention only obstacles in the way.
-4. STYLE: Use complete, concise sentences. Avoid bullet points. Do not cut off sentences.${memoryContext}
+Analyze the image and provide output in this strict priority order:
+
+1. 🛑 SAFETY GUARDIAN (URGENT):
+   - Immediately detect: Approaching Vehicles, Staircases (up/down), Edges/Drops, Wet Floors, Low hanging obstacles.
+   - If a hazard is immediate, START response with "WARNING: [Hazard Name] [Instruction]". 
+   - Example: "WARNING: Car approaching on right. Stop." or "WARNING: Downward stairs ahead."
+
+2. 📍 MICRO NAVIGATION (Precision):
+   - Give executable instructions based on the path.
+   - Use approximate metric distances or steps if clear.
+   - Example: "Walk forward 2 meters", "Turn 30 degrees left to avoid the pole", "Path clear for 5 steps".
+
+3. 🛠️ AFFORDANCE & UTILITY (Object Purpose):
+   - Do not just name objects; explain their utility/state.
+   - Example: instead of "There is a chair", say "Empty chair 1 meter ahead, you can sit."
+   - Example: instead of "A door", say "Closed door, handle is on the left."
+
+4. STYLE:
+   - Concise, direct, imperative. No fluff.
+   - Max 2-3 sentences unless explaining a complex scene.
 `;
 };
 
@@ -30,14 +55,13 @@ If the answer is not visible, say so.
 Keep answers under 2 sentences.
 `;
 
-export const analyzeImage = async (base64Image: string, tags: MemoryTag[] = []): Promise<string> => {
+export const analyzeImage = async (base64Image: string, tags: MemoryTag[] = [], sensors?: SensorData): Promise<string> => {
   try {
     if (!base64Image || base64Image.length < 100) {
         console.warn("Invalid base64 image received");
         return "";
     }
 
-    // Remove data URL prefix if present (look for the comma after base64)
     const cleanBase64 = base64Image.includes('base64,') 
         ? base64Image.split('base64,')[1] 
         : base64Image;
@@ -49,13 +73,13 @@ export const analyzeImage = async (base64Image: string, tags: MemoryTag[] = []):
           role: 'user',
           parts: [
             { inlineData: { mimeType: 'image/jpeg', data: cleanBase64 } },
-            { text: "Describe the path and hazards." }
+            { text: "Guide me." }
           ]
         }
       ],
       config: {
-        systemInstruction: getNavInstruction(tags),
-        maxOutputTokens: 300, 
+        systemInstruction: getNavInstruction(tags, sensors),
+        maxOutputTokens: 150, // Shorter for faster realtime response
         temperature: 0.4,
       }
     });

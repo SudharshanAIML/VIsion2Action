@@ -19,3 +19,9 @@ export interface MemoryTag {
   name: string;
   timestamp: number;
 }
+
+export interface SensorData {
+  isMoving: boolean;
+  heading: number | null; // 0-360
+  stepCount: number;
+}

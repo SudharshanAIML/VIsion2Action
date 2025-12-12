@@ -5,7 +5,8 @@ import { CameraHandle, AppRoute, MemoryTag } from '../types';
 import { analyzeImage, askAboutImage } from '../services/geminiService';
 import { speak, vibrate, playEarcon } from '../services/accessibilityService';
 import { getTags, addTag, removeTag } from '../services/memoryService';
-import { Mic, StopCircle, Navigation, Loader2, Tag as TagIcon, Trash2 } from 'lucide-react';
+import { initSensors, stopSensors, getSensorData } from '../services/sensorService';
+import { Mic, StopCircle, Navigation, Loader2, Tag as TagIcon, Trash2, ShieldAlert } from 'lucide-react';
 
 export const ContinuousScreen: React.FC = () => {
   const navigate = useNavigate();
@@ -17,6 +18,7 @@ export const ContinuousScreen: React.FC = () => {
   const [isListening, setIsListening] = useState(false);
   const [lastImage, setLastImage] = useState<string | null>(null);
   const [tags, setTags] = useState<MemoryTag[]>([]);
+  const [isWarning, setIsWarning] = useState(false); // New state for hazards
 
   // Refs for loop management
   const isLoopRunning = useRef(true);
@@ -121,8 +123,6 @@ export const ContinuousScreen: React.FC = () => {
 
   const handleMemoryCommand = async (transcript: string) => {
     setStatus(`Tagging: "${transcript}"`);
-    
-    // Simulate brief processing delay
     await new Promise(r => setTimeout(r, 500));
 
     const result = addTag(transcript);
@@ -182,19 +182,34 @@ export const ContinuousScreen: React.FC = () => {
       
       if (imageBase64) {
         setLastImage(imageBase64); 
-        // Pass the active tags to the AI analysis
-        const description = await analyzeImage(imageBase64, tags);
+        
+        // Pass the active tags and SENSOR data to the AI analysis
+        const sensors = getSensorData();
+        const description = await analyzeImage(imageBase64, tags, sensors);
         
         if (description && isLoopRunning.current && !isListening && processingRef.current) {
-          setStatus(description);
-          speak(description);
+          
+          // Safety Guardian Logic
+          if (description.startsWith("WARNING")) {
+            setIsWarning(true);
+            setStatus(description);
+            // Urgent haptics: 3 strong pulses
+            vibrate([500, 100, 500, 100, 500]); 
+            speak(description);
+          } else {
+            setIsWarning(false);
+            setStatus(description);
+            speak(description);
+          }
         }
       }
     } catch (e) {
       console.warn("Nav frame skipped", e);
     } finally {
       processingRef.current = false;
-      scheduleNextFrame(4000); 
+      // If warning, scan faster (2s), else normal pace (4s)
+      const nextDelay = isWarning ? 2000 : 4000;
+      scheduleNextFrame(nextDelay); 
     }
   };
 
@@ -215,6 +230,9 @@ export const ContinuousScreen: React.FC = () => {
   // --- Interaction Handlers ---
 
   const handlePointerDown = (e: React.MouseEvent | React.TouchEvent) => {
+    // Permission trigger for iOS sensors on first tap
+    initSensors(); 
+
     if (isActive) window.speechSynthesis.cancel();
     
     isLongPressHandled.current = false;
@@ -246,6 +264,7 @@ export const ContinuousScreen: React.FC = () => {
       vibrate([50, 50]);
     } else {
       setIsActive(true);
+      // initSensors is also called here implicitly if tapped
       vibrate(50);
     }
   };
@@ -254,7 +273,8 @@ export const ContinuousScreen: React.FC = () => {
 
   useEffect(() => {
     setTags(getTags()); // Load tags on mount
-    
+    initSensors(); // Try initializing sensors
+
     if (isActive) {
       isLoopRunning.current = true;
       speak("Navigation Active.");
@@ -269,6 +289,7 @@ export const ContinuousScreen: React.FC = () => {
     return () => {
       isLoopRunning.current = false;
       if (timerRef.current) clearTimeout(timerRef.current);
+      stopSensors();
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isActive]);
@@ -281,6 +302,11 @@ export const ContinuousScreen: React.FC = () => {
         <CameraView ref={cameraRef} />
       </div>
 
+      {/* Safety Alert Flash Overlay */}
+      {isWarning && (
+        <div className="absolute inset-0 z-0 bg-red-600/30 animate-pulse pointer-events-none" />
+      )}
+
       {/* Tags Overlay */}
       {tags.length > 0 && (
          <div className="absolute top-16 left-0 right-0 z-20 flex justify-center gap-2 pointer-events-none px-4">
@@ -288,7 +314,6 @@ export const ContinuousScreen: React.FC = () => {
              <div key={tag.id} className="bg-blue-600/90 text-white text-xs px-3 py-1 rounded-full backdrop-blur flex items-center shadow-lg animate-in fade-in zoom-in duration-300">
                <TagIcon size={10} className="mr-1" />
                <span className="font-bold mr-2 uppercase">{tag.name}</span>
-               {/* Delete button needs pointer-events-auto */}
                <button 
                  onClick={(e) => handleDeleteTag(tag.id, e)}
                  className="pointer-events-auto p-1 hover:text-red-300 active:scale-90"
@@ -317,11 +342,16 @@ export const ContinuousScreen: React.FC = () => {
         <div className={`
            p-8 rounded-3xl backdrop-blur-md border-4 shadow-2xl max-w-sm w-full
            flex flex-col items-center text-center gap-4 transition-all duration-300
-           ${isListening ? 'bg-red-900/80 border-red-500 scale-110' : (isActive ? 'bg-black/60 border-yellow-400' : 'bg-slate-800/90 border-slate-600')}
+           ${isListening ? 'bg-red-900/80 border-red-500 scale-110' : (
+             isWarning ? 'bg-red-950/90 border-red-500' : 
+             (isActive ? 'bg-black/60 border-yellow-400' : 'bg-slate-800/90 border-slate-600')
+           )}
         `}>
           
           {isListening ? (
              <Mic size={64} className="text-white animate-pulse" />
+          ) : isWarning ? (
+             <ShieldAlert size={64} className="text-red-500 animate-bounce" />
           ) : isActive ? (
              <Navigation size={48} className="text-yellow-400" />
           ) : (
@@ -329,10 +359,10 @@ export const ContinuousScreen: React.FC = () => {
           )}
 
           <h2 className={`text-2xl font-black uppercase ${isActive || isListening ? 'text-white' : 'text-slate-400'}`}>
-            {isListening ? "Listening..." : (isActive ? "Monitoring" : "Paused")}
+            {isListening ? "Listening..." : (isWarning ? "HAZARD DETECTED" : (isActive ? "Monitoring" : "Paused"))}
           </h2>
 
-          <p className="text-xl font-bold text-yellow-300 leading-snug min-h-[3rem]">
+          <p className={`text-xl font-bold leading-snug min-h-[3rem] ${isWarning ? 'text-red-300' : 'text-yellow-300'}`}>
             {status}
           </p>
           
